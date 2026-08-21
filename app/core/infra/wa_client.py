@@ -167,6 +167,14 @@ async def send_wa_dev_contact(to: str, display_name: str, phone: str) -> dict:
 
 async def send_wa_contact(device_id: str, to: str, display_name: str, phone: str) -> dict:
     """Send a WhatsApp contact card from the specified device."""
+    if device_id.startswith("cloud_"):
+        phone_number_id = device_id[len("cloud_"):]
+        access_token = await _get_cloud_access_token(phone_number_id)
+        if not access_token:
+            logger.warning("wa_client.cloud_send_contact.no_token", phone_number_id=phone_number_id)
+            return {"status": "error", "error": "No access token for Cloud API phone number"}
+        from app.core.infra.wa_cloud_client import send_contact_message
+        return await send_contact_message(phone_number_id, to, display_name, phone, access_token)
     if device_id.startswith("wadev_"):
         return await send_wa_dev_contact(to, display_name, phone)
     async with httpx.AsyncClient(timeout=_WA_TIMEOUT_DEFAULT) as client:
@@ -180,6 +188,9 @@ async def send_wa_contact(device_id: str, to: str, display_name: str, phone: str
 
 async def start_wa_typing(device_id: str, to: str) -> None:
     """Start or refresh the WhatsApp typing keep-alive for a chat."""
+    if device_id.startswith("cloud_"):
+        # Cloud API has no typing indicator endpoint — graceful no-op
+        return
     if device_id.startswith("wadev_"):
         url = f"{_wa_dev_base_url()}/typing/start"
     else:
@@ -194,6 +205,9 @@ async def start_wa_typing(device_id: str, to: str) -> None:
 
 async def stop_wa_typing(device_id: str, to: str) -> None:
     """Stop the WhatsApp typing keep-alive for a chat."""
+    if device_id.startswith("cloud_"):
+        # Cloud API has no typing indicator endpoint — graceful no-op
+        return
     if device_id.startswith("wadev_"):
         url = f"{_wa_dev_base_url()}/typing/stop"
     else:
@@ -213,7 +227,22 @@ async def send_wa_image(
     caption: str = "",
     mimetype: str = "image/jpeg",
 ) -> dict:
-    """Send a WhatsApp image message via Go service. image_base64 is raw base64-encoded image bytes."""
+    """Send a WhatsApp image message. image_base64 is raw base64-encoded image bytes.
+
+    Routing: cloud_* → Cloud API (upload + send), wadev_* → wa-dev-service, else → legacy Go wa-service.
+    """
+    if device_id.startswith("cloud_"):
+        import base64 as _b64
+        phone_number_id = device_id[len("cloud_"):]
+        access_token = await _get_cloud_access_token(phone_number_id)
+        if not access_token:
+            logger.warning("wa_client.cloud_send_image.no_token", phone_number_id=phone_number_id)
+            return {"status": "error", "error": "No access token for Cloud API phone number"}
+        from app.core.infra.wa_cloud_client import upload_media, send_image_by_media_id
+        image_bytes = _b64.b64decode(image_base64)
+        ext = mimetype.split("/")[-1] if "/" in mimetype else "jpg"
+        media_id = await upload_media(phone_number_id, image_bytes, mimetype, access_token, filename=f"image.{ext}")
+        return await send_image_by_media_id(phone_number_id, to, media_id, caption, access_token)
     if device_id.startswith("wadev_"):
         async with httpx.AsyncClient(timeout=30) as client:
             resp = await client.post(
@@ -239,7 +268,21 @@ async def send_wa_document(
     caption: str = "",
     mimetype: str = "application/octet-stream",
 ) -> dict:
-    """Send a WhatsApp document message via Go service. document_base64 is raw base64-encoded file bytes."""
+    """Send a WhatsApp document message. document_base64 is raw base64-encoded file bytes.
+
+    Routing: cloud_* → Cloud API (upload + send), wadev_* → wa-dev-service, else → legacy Go wa-service.
+    """
+    if device_id.startswith("cloud_"):
+        import base64 as _b64
+        phone_number_id = device_id[len("cloud_"):]
+        access_token = await _get_cloud_access_token(phone_number_id)
+        if not access_token:
+            logger.warning("wa_client.cloud_send_document.no_token", phone_number_id=phone_number_id)
+            return {"status": "error", "error": "No access token for Cloud API phone number"}
+        from app.core.infra.wa_cloud_client import upload_media, send_document_by_media_id
+        doc_bytes = _b64.b64decode(document_base64)
+        media_id = await upload_media(phone_number_id, doc_bytes, mimetype, access_token, filename=filename)
+        return await send_document_by_media_id(phone_number_id, to, media_id, filename, caption, access_token)
     if device_id.startswith("wadev_"):
         async with httpx.AsyncClient(timeout=60) as client:
             resp = await client.post(

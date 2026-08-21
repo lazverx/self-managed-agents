@@ -16,6 +16,9 @@ logger = structlog.get_logger(__name__)
 
 PAYMENT_BASE_URL = "https://chiefaiofficer.id/pay"
 PLAN_ALIASES = {
+    "trial": "trial",
+    "gratis": "trial",
+    "free": "trial",
     "starter": "tier_1",
     "tier1": "tier_1",
     "tier_1": "tier_1",
@@ -29,11 +32,13 @@ PLAN_ALIASES = {
     "tier_3": "tier_3",
 }
 PLAN_LABELS = {
+    "trial": "Trial (Gratis)",
     "tier_1": "Starter",
     "tier_2": "Pro",
     "tier_3": "Enterprise",
 }
 PLAN_CAPACITY = {
+    "trial": 1,
     "tier_1": 1,
     "tier_2": 2,
     "tier_3": None,
@@ -110,11 +115,13 @@ def build_builder_payment_tools(
     @tool
     async def get_payment_link(plan: str = "", phone: str = "") -> str:
         """
-        Buat link pembayaran Clevio untuk paket tertentu.
+        Buat link pembayaran Clevio untuk paket tertentu, atau berikan info paket Trial gratis.
 
         Gunakan saat user meminta beli/upgrade paket, minta link pembayaran,
-        atau ingin melihat link plan tertentu. Tool ini hanya membuat link
-        publik Clevio; pembayaran dan aktivasi tetap diproses oleh sistem
+        atau ingin melihat link plan tertentu. Jika user meminta info paket Trial/gratis,
+        kembalikan informasi bahwa Trial adalah paket default gratis (14 hari, 1 agent).
+        Tool ini hanya membuat link publik Clevio untuk paket berbayar;
+        pembayaran dan aktivasi tetap diproses oleh sistem
         setelah notifikasi DOKU masuk.
 
         Jangan tolak hanya karena plan user saat ini sudah lebih tinggi.
@@ -122,7 +129,7 @@ def build_builder_payment_tools(
         tetap panggil tool ini dan berikan link hasilnya.
 
         Args:
-            plan: Paket yang diminta: tier_1/Starter, tier_2/Pro, atau tier_3/Enterprise.
+            plan: Paket yang diminta: trial/gratis, tier_1/Starter, tier_2/Pro, atau tier_3/Enterprise.
             phone: Opsional. Fallback jika nomor pengirim sesi tidak terbaca.
         """
         try:
@@ -130,8 +137,23 @@ def build_builder_payment_tools(
             if plan_code is None:
                 return json.dumps({
                     "error": "plan_tidak_valid",
-                    "message": "Pilih paket Starter/tier_1, Pro/tier_2, atau Enterprise/tier_3.",
+                    "message": "Pilih paket Trial/gratis, Starter/tier_1, Pro/tier_2, atau Enterprise/tier_3.",
                     "available_plans": PLAN_LABELS,
+                }, ensure_ascii=False)
+
+            # Trial is free — no payment link needed
+            if plan_code == "trial":
+                return json.dumps({
+                    "plan_code": "trial",
+                    "plan_label": "Trial (Gratis)",
+                    "max_agents": 1,
+                    "is_free": True,
+                    "duration_days": 14,
+                    "message": (
+                        "Paket Trial adalah paket default gratis yang otomatis aktif untuk setiap user baru. "
+                        "Berlaku 14 hari, limit 1 agent, tidak perlu bayar apapun. "
+                        "Setelah 14 hari, perlu upgrade ke Starter/Pro/Enterprise untuk melanjutkan."
+                    ),
                 }, ensure_ascii=False)
 
             target_phone = best_owner_identifier(owner_phone, default_target, phone)

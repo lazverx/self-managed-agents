@@ -754,9 +754,9 @@ RUNTIME_LIMITATIONS: dict[str, dict] = {
     "wa_device_scan_required_before_use": {
         "severity": "info",
         "affects": ["cs_whatsapp_basic", "scheduler_assistant"],
-        "description": "User harus scan QR untuk menghubungkan nomor WA ke agent sebelum bisa dipakai.",
-        "mitigation": "Gunakan send_agent_wa_qr() setelah create untuk kirim QR ke user.",
-        "user_message": "Perlu scan QR WhatsApp sebelum agent bisa digunakan.",
+        "description": "User harus menghubungkan WhatsApp Business melalui Meta Embedded Signup (Cloud API resmi) atau scan QR (legacy) sebelum agent bisa dipakai.",
+        "mitigation": "Gunakan build_official_meta_signup_url() untuk mengarahkan user ke halaman Embedded Signup. Fallback: send_agent_wa_qr() untuk QR legacy.",
+        "user_message": "Perlu menghubungkan WhatsApp Business sebelum agent bisa digunakan. Gunakan link Embedded Signup yang disediakan.",
     },
     "rag_requires_documents_uploaded_first": {
         "severity": "warning",

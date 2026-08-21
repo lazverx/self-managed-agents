@@ -207,17 +207,30 @@ def build_builder_user_tools(
                 )
                 if details is None and is_probable_lid(target_phone):
                     details = await get_subscription_by_external_id(target_phone, db)
+                if details is None and not is_probable_lid(target_phone):
+                    # Auto-provision trial for new users — zero-setup onboarding
+                    try:
+                        from app.core.domain.subscription_service import get_or_create_wa_user
+                        await get_or_create_wa_user(target_phone, db)
+                        await db.commit()
+                        # Re-lookup after provisioning
+                        details = await get_best_subscription_by_external_ids(
+                            owner_candidates, db, sender_name=sender_name
+                        )
+                    except Exception as _prov_exc:
+                        logger.warning("builder_tools.get_user_subscription.provision_failed", error=str(_prov_exc)[:200])
                 if details is None:
                     return json.dumps({
-                        "error": "Subscription owner sesi ini tidak ditemukan.",
+                        "plan_code": "trial",
+                        "plan_label": "Trial (Gratis)",
+                        "status": "trial",
+                        "is_active": True,
+                        "agents_used": 0,
+                        "agents_limit": 1,
+                        "agents_remaining": 1,
+                        "active_agent_names": [],
+                        "note": "Akun baru — trial otomatis aktif, tidak perlu daftar.",
                         "identifier": target_phone,
-                        "identifier_type": "lid" if is_probable_lid(target_phone) else "external_id",
-                        "lookup_identifiers": [
-                            normalize_phone(str(candidate or ""))
-                            for candidate in owner_candidates
-                            if normalize_phone(str(candidate or ""))
-                        ],
-                        "read_only": True,
                     }, ensure_ascii=False)
 
                 user, sub, plan = details

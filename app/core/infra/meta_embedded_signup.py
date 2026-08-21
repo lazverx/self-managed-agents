@@ -84,10 +84,11 @@ async def get_shared_waba_id(access_token: str) -> str | None:
     params = {"input_token": access_token}
     from app.config import get_settings
     settings = get_settings()
+    app_access_token = f"{settings.meta_app_id}|{settings.meta_app_secret}"
     async with httpx.AsyncClient(timeout=_DEFAULT_TIMEOUT) as client:
         resp = await client.get(
             url, params=params,
-            headers={"Authorization": f"Bearer {settings.meta_app_secret}"},
+            headers={"Authorization": f"Bearer {app_access_token}"},
         )
         if resp.status_code == 200:
             data = resp.json().get("data", {})

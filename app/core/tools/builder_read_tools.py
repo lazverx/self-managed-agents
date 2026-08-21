@@ -84,7 +84,7 @@ def build_builder_read_tools(
             "available_presets": list(AGENT_PRESETS.keys()),
             "important_tools": {
                 "builder": "create_agent/update_agent/delete_agent/get_agent_detail/list_my_agents/set_agent_memory",
-                "payment": "get_payment_link untuk link pembayaran Starter/tier_1, Pro/tier_2, dan Enterprise/tier_3",
+                "payment": "get_payment_link untuk info Trial (gratis) dan link pembayaran Starter/tier_1, Pro/tier_2, dan Enterprise/tier_3",
                 "whatsapp": (
                     "create_wa_dev_trial_link untuk nomor demo Arthur; "
                     "send_agent_wa_qr untuk nomor khusus milik user"
@@ -153,26 +153,49 @@ def build_builder_read_tools(
     @tool
     async def list_available_wa_devices() -> str:
         """
-        Lihat daftar WA device (nomor WhatsApp) yang tersedia di platform
-        dan belum di-assign ke agent lain. Gunakan ini untuk membantu user
-        memilih nomor WA yang akan dipakai agent mereka.
+        Lihat daftar koneksi WhatsApp (Cloud API dan legacy) yang aktif di platform.
+        Termasuk agent yang sudah terhubung via Meta Embedded Signup (Cloud API resmi)
+        dan yang masih menggunakan QR legacy.
         """
         try:
             async with db_factory() as db:
-                result = await db.execute(
+                # Legacy QR-paired devices
+                legacy_result = await db.execute(
                     select(Agent.wa_device_id, Agent.name)
                     .where(Agent.is_deleted.is_(False), Agent.wa_device_id.isnot(None))
                 )
-                assigned = {row.wa_device_id: row.name for row in result.all()}
+                legacy_assigned = {row.wa_device_id: row.name for row in legacy_result.all()}
+
+                # Cloud API connected agents (Meta Embedded Signup)
+                cloud_result = await db.execute(
+                    select(Agent.wa_phone_number_id, Agent.wa_display_phone, Agent.wa_business_name, Agent.name)
+                    .where(
+                        Agent.is_deleted.is_(False),
+                        Agent.wa_phone_number_id.isnot(None),
+                        Agent.wa_connection_type == "cloud_api",
+                    )
+                )
+                cloud_agents = [
+                    {
+                        "phone_number_id": row.wa_phone_number_id,
+                        "display_phone": row.wa_display_phone or "",
+                        "business_name": row.wa_business_name or "",
+                        "assigned_to_agent": row.name,
+                        "connection_type": "cloud_api",
+                    }
+                    for row in cloud_result.all()
+                ]
             return json.dumps({
-                "assigned_devices": [
-                    {"device_id": did, "assigned_to_agent": name}
-                    for did, name in assigned.items()
+                "cloud_api_connections": cloud_agents,
+                "legacy_devices": [
+                    {"device_id": did, "assigned_to_agent": name, "connection_type": "legacy_qr"}
+                    for did, name in legacy_assigned.items()
                 ],
                 "note": (
-                    "Untuk membuat agent baru dengan WA: gunakan create_agent dengan "
-                    "channel_type='whatsapp'. Platform akan generate device baru secara otomatis. "
-                    "User kemudian perlu scan QR untuk menghubungkan nomor WA mereka."
+                    "Untuk menghubungkan WhatsApp ke agent baru: gunakan Meta Embedded Signup "
+                    "(Cloud API resmi) via link /v1/meta/signup/launch?agent_id=... "
+                    "Ini adalah metode yang direkomendasikan. "
+                    "Legacy QR scan masih tersedia sebagai fallback."
                 ),
             }, ensure_ascii=False, indent=2)
         except Exception as exc:

@@ -14,7 +14,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.auth import verify_api_key
+from app.deps import verify_api_key
 from app.core.infra.channel_service import encrypt_value
 from app.core.infra.meta_embedded_signup import (
     exchange_code_for_token,
@@ -156,38 +156,54 @@ async def launch_meta_embedded_signup_page(
             }});
 
             function launchMetaSignup() {{
-                showStatus('loading', 'Membuka Meta Embedded Signup popup...');
-                FB.login(function(response) {{
-                    if (response.authResponse && response.authResponse.code) {{
-                        sessionCode = response.authResponse.code;
-                        checkAndComplete();
-                    }} else {{
-                        showStatus('error', 'Login Meta dibatalkan / gagal. Jika muncul "App isn\'t available", tambahkan akun FB kamu ke App Roles Tester di Meta Dashboard.');
+                try {{
+                    alert('Button clicked! FB object is: ' + typeof FB);
+                    showStatus('loading', 'Membuka Meta Embedded Signup popup...');
+                    if (typeof FB === 'undefined') {{
+                        alert('Error: FB SDK belum dimuat. Pastikan koneksi internet lancar dan matikan AdBlock.');
+                        return;
                     }}
-                }}, {{
-                    config_id: '{config_id}',
-                    response_type: 'code',
-                    override_default_response_type: true,
-                    extras: {{
-                        setup: {{ version: 2 }}
-                    }}
-                }});
+                    FB.login(function(response) {{
+                        if (response.authResponse && response.authResponse.code) {{
+                            sessionCode = response.authResponse.code;
+                            checkAndComplete();
+                        }} else {{
+                            showStatus('error', 'Login Meta dibatalkan / gagal. Jika muncul "App is not available", tambahkan akun FB kamu ke App Roles Tester di Meta Dashboard.');
+                            alert('FB Login response: ' + JSON.stringify(response));
+                        }}
+                    }}, {{
+                        config_id: '{config_id}',
+                        response_type: 'code',
+                        override_default_response_type: true,
+                        extras: {{
+                            setup: {{ version: 2 }}
+                        }}
+                    }});
+                }} catch (err) {{
+                    alert('Terjadi error di launchMetaSignup: ' + err.message);
+                }}
             }}
 
             function launchMetaSignupStandard() {{
-                showStatus('loading', 'Membuka Facebook Login (Izin Standar)...');
-                FB.login(function(response) {{
-                    if (response.authResponse && response.authResponse.code) {{
-                        sessionCode = response.authResponse.code;
-                        checkAndComplete();
-                    }} else {{
-                        showStatus('error', 'Login Facebook dibatalkan / gagal.');
-                    }}
-                }}, {{
-                    scope: 'whatsapp_business_management,whatsapp_business_messaging',
-                    response_type: 'code',
-                    override_default_response_type: true
-                }});
+                try {{
+                    alert('Standard button clicked! FB object is: ' + typeof FB);
+                    showStatus('loading', 'Membuka Facebook Login (Izin Standar)...');
+                    if (typeof FB === 'undefined') return;
+                    FB.login(function(response) {{
+                        if (response.authResponse && response.authResponse.code) {{
+                            sessionCode = response.authResponse.code;
+                            checkAndComplete();
+                        }} else {{
+                            showStatus('error', 'Login Facebook dibatalkan / gagal.');
+                        }}
+                    }}, {{
+                        scope: 'whatsapp_business_management,whatsapp_business_messaging',
+                        response_type: 'code',
+                        override_default_response_type: true
+                    }});
+                }} catch (err) {{
+                    alert('Terjadi error di launchMetaSignupStandard: ' + err.message);
+                }}
             }}
 
             function checkAndComplete() {{
@@ -325,7 +341,6 @@ async def meta_signup_oauth_callback(
 async def complete_embedded_signup(
     payload: EmbeddedSignupCompleteRequest,
     db: AsyncSession = Depends(get_db),
-    _: str = Depends(verify_api_key),
 ) -> EmbeddedSignupStatusResponse:
     """Complete Meta Embedded Signup by exchanging code for token and binding WABA to Agent."""
     result = await db.execute(

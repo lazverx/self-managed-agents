@@ -62,8 +62,8 @@ class Settings(BaseSettings):
     agent_timeout_seconds: int = 300
 
     # Memory
-    short_term_memory_turns: int = 8   # conversation turns kept in LLM context
-    ltm_extraction_every: int = 5       # extract LTM every N user messages
+    short_term_memory_turns: int = 20   # conversation turns kept in LLM context
+    ltm_extraction_every: int = 10       # extract LTM every N user messages
 
     # WhatsApp microservice (legacy QR-based — will be deprecated)
     wa_service_url: str = "http://localhost:8080"
@@ -126,3 +126,4 @@ class Settings(BaseSettings):
 @lru_cache
 def get_settings() -> Settings:
     return Settings()
+

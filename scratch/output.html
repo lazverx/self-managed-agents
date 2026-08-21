@@ -1,0 +1,178 @@
+
+    <!DOCTYPE html>
+    <html lang="id">
+    <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <title>Meta WhatsApp Business Signup — Arthur</title>
+        <style>
+            * { box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; }
+            body { background: #0f172a; color: #f8fafc; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; padding: 20px; }
+            .container { background: #1e293b; border-radius: 20px; padding: 40px 30px; width: 100%; max-width: 440px; text-align: center; box-shadow: 0 20px 40px rgba(0,0,0,0.5); border: 1px solid #334155; }
+            .logo { width: 64px; height: 64px; background: #2563eb; border-radius: 16px; display: inline-flex; align-items: center; justify-content: center; font-size: 32px; margin-bottom: 20px; }
+            h1 { font-size: 22px; font-weight: 700; color: #ffffff; margin: 0 0 8px 0; }
+            .subtitle { font-size: 14px; color: #94a3b8; margin-bottom: 24px; line-height: 1.5; }
+            .agent-box { background: #0f172a; border-radius: 12px; padding: 14px; margin-bottom: 24px; text-align: left; border: 1px solid #334155; }
+            .agent-label { font-size: 11px; text-transform: uppercase; color: #64748b; letter-spacing: 0.5px; margin-bottom: 4px; }
+            .agent-name { font-size: 16px; font-weight: 600; color: #38bdf8; }
+            .fb-btn { background: #1877f2; color: #ffffff; border: none; border-radius: 12px; padding: 14px 24px; font-size: 16px; font-weight: 600; width: 100%; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 10px; transition: all 0.2s ease; box-shadow: 0 4px 12px rgba(24,119,242,0.3); }
+            .fb-btn:hover { background: #166fe5; transform: translateY(-1px); }
+            .fb-btn:active { transform: translateY(0); }
+            .status-box { margin-top: 20px; padding: 14px; border-radius: 12px; font-size: 14px; display: none; }
+            .status-box.loading { display: block; background: #1e3a8a; color: #93c5fd; border: 1px solid #3b82f6; }
+            .status-box.success { display: block; background: #064e3b; color: #6ee7b7; border: 1px solid #10b981; }
+            .status-box.error { display: block; background: #7f1d1d; color: #fca5a5; border: 1px solid #ef4444; }
+            .footer { margin-top: 24px; font-size: 12px; color: #64748b; }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <div class="logo">📱</div>
+            <h1>Meta WhatsApp Business</h1>
+            <div class="subtitle">Hubungkan WhatsApp Business Account ke Assistant AI kamu secara resmi.</div>
+
+            <div class="agent-box">
+                <div class="agent-label">Assistant ID</div>
+                <div class="agent-name">Arthur</div>
+            </div>
+
+            <button id="signup-btn" class="fb-btn" onclick="launchMetaSignup()">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/></svg>
+                Hubungkan via Meta Embedded Signup
+            </button>
+
+            <button id="signup-alt-btn" class="fb-btn" style="background: #334155; margin-top: 10px; font-size: 14px;" onclick="launchMetaSignupStandard()">
+                Hubungkan via Standard Facebook OAuth
+            </button>
+
+            <div id="status-box" class="status-box"></div>
+
+            <div class="footer">
+                Ditenagai oleh Meta WhatsApp Cloud API Official<br>
+                <small style="color: #64748b; display: block; margin-top: 8px;">
+                    Catatan: Jika muncul "App isn't available", pastikan akun Facebook kamu sudah ditambahkan sebagai <strong>Tester/Developer</strong> di Meta App Dashboard (1267421042076588).
+                </small>
+            </div>
+        </div>
+
+        <script>
+            window.fbAsyncInit = function() {
+                FB.init({
+                    appId            : '1267421042076588',
+                    autoLogAppEvents : true,
+                    xfbml            : true,
+                    version          : 'v26.0'
+                });
+            };
+        </script>
+        <script async defer crossorigin="anonymous" src="https://connect.facebook.net/en_US/sdk.js"></script>
+        <script>
+
+            let sessionCode = null;
+            let sessionWabaId = null;
+            let sessionPhoneId = null;
+
+            window.addEventListener('message', (event) => {
+                if (event.origin.includes('facebook.com')) {
+                    try {
+                        const data = JSON.parse(event.data);
+                        if (data.type === 'WA_EMBEDDED_SIGNUP') {
+                            if (data.data) {
+                                sessionWabaId = data.data.waba_id;
+                                sessionPhoneId = data.data.phone_number_id;
+                                checkAndComplete();
+                            }
+                        }
+                    } catch (e) {}
+                }
+            });
+
+            function launchMetaSignup() {
+                try {
+                    alert('Button clicked! FB object is: ' + typeof FB);
+                    showStatus('loading', 'Membuka Meta Embedded Signup popup...');
+                    if (typeof FB === 'undefined') {
+                        alert('Error: FB SDK belum dimuat. Pastikan koneksi internet lancar dan matikan AdBlock.');
+                        return;
+                    }
+                    FB.login(function(response) {
+                        if (response.authResponse && response.authResponse.code) {
+                            sessionCode = response.authResponse.code;
+                            checkAndComplete();
+                        } else {
+                            showStatus('error', 'Login Meta dibatalkan / gagal. Jika muncul "App isn't available", tambahkan akun FB kamu ke App Roles Tester di Meta Dashboard.');
+                            alert('FB Login response: ' + JSON.stringify(response));
+                        }
+                    }, {
+                        config_id: '2310023142810963',
+                        response_type: 'code',
+                        override_default_response_type: true,
+                        extras: {
+                            setup: { version: 2 }
+                        }
+                    });
+                } catch (err) {
+                    alert('Terjadi error di launchMetaSignup: ' + err.message);
+                }
+            }
+
+            function launchMetaSignupStandard() {
+                try {
+                    alert('Standard button clicked! FB object is: ' + typeof FB);
+                    showStatus('loading', 'Membuka Facebook Login (Izin Standar)...');
+                    if (typeof FB === 'undefined') return;
+                    FB.login(function(response) {
+                        if (response.authResponse && response.authResponse.code) {
+                            sessionCode = response.authResponse.code;
+                            checkAndComplete();
+                        } else {
+                            showStatus('error', 'Login Facebook dibatalkan / gagal.');
+                        }
+                    }, {
+                        scope: 'whatsapp_business_management,whatsapp_business_messaging',
+                        response_type: 'code',
+                        override_default_response_type: true
+                    });
+                } catch (err) {
+                    alert('Terjadi error di launchMetaSignupStandard: ' + err.message);
+                }
+            }
+
+            function checkAndComplete() {
+                if (sessionCode) {
+                    showStatus('loading', 'Menghubungkan WhatsApp Business ke Assistant...');
+                    fetch('/v1/meta/signup/complete', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            agent_id: 'ad4065e7-7a33-477f-868b-0343b3c69308',
+                            code: sessionCode,
+                            waba_id: sessionWabaId || '',
+                            phone_number_id: sessionPhoneId || '',
+                            business_name: 'Arthur'
+                        })
+                    })
+                    .then(r => r.json())
+                    .then(data => {
+                        if (data.connected) {
+                            showStatus('success', '✅ WhatsApp Business Berhasil Dihubungkan! Silakan kembali ke chat Arthur dan ketik "sudah".');
+                            document.getElementById('signup-btn').style.display = 'none';
+                        } else {
+                            showStatus('error', 'Gagal menghubungkan: ' + (data.error || 'Unknown error'));
+                        }
+                    })
+                    .catch(err => {
+                        showStatus('error', 'Terjadi kesalahan koneksi ke server: ' + err.message);
+                    });
+                }
+            }
+
+            function showStatus(type, msg) {
+                const box = document.getElementById('status-box');
+                box.className = 'status-box ' + type;
+                box.innerHTML = msg;
+            }
+        </script>
+    </body>
+    </html>
+    

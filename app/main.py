@@ -315,6 +315,16 @@ async def health_detailed(db: AsyncSession = Depends(get_db)) -> dict:
     except Exception:
         checks["wa_service"] = "unreachable"
 
+    # Cloud API (Meta Embedded Signup) config check
+    cloud_api_ok = bool(settings.meta_app_id and settings.meta_app_secret)
+    webhook_ok = bool(settings.meta_webhook_verify_token)
+    if cloud_api_ok and webhook_ok:
+        checks["wa_cloud_api"] = "ok"
+    elif cloud_api_ok:
+        checks["wa_cloud_api"] = "missing_webhook_verify_token"
+    else:
+        checks["wa_cloud_api"] = "missing_meta_app_secret"
+
     all_ok = all(v == "ok" for v in checks.values())
     return JSONResponse(
         status_code=200 if all_ok else 503,

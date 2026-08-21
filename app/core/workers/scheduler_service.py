@@ -92,8 +92,13 @@ def _scheduled_channel_config(session: Any, agent_model: Any) -> dict[str, Any]:
         return cfg
 
     if not cfg.get("device_id"):
-        agent_device_id = str(getattr(agent_model, "wa_device_id", "") or "").strip()
-        cfg["device_id"] = agent_device_id or f"wadev_{getattr(agent_model, 'id', getattr(session, 'agent_id', ''))}"
+        # Prefer Cloud API (wa_phone_number_id) over legacy (wa_device_id)
+        cloud_phone_id = str(getattr(agent_model, "wa_phone_number_id", "") or "").strip()
+        if cloud_phone_id:
+            cfg["device_id"] = f"cloud_{cloud_phone_id}"
+        else:
+            agent_device_id = str(getattr(agent_model, "wa_device_id", "") or "").strip()
+            cfg["device_id"] = agent_device_id or f"wadev_{getattr(agent_model, 'id', getattr(session, 'agent_id', ''))}"
 
     if not cfg.get("user_phone"):
         cfg["user_phone"] = str(getattr(session, "external_user_id", "") or "")

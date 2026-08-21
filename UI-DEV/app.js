@@ -1472,6 +1472,11 @@ async function ensureArthurV2() {
   await arthurLoad();
 }
 
+function arthurConnectMeta() {
+  if (!Arthur.id) { alert('Load Arthur dulu'); return; }
+  window.open(`${S.baseUrl}/v1/meta/signup/launch?agent_id=${Arthur.id}`, '_blank');
+}
+
 async function arthurConnectWA() {
   if (!Arthur.id) { alert('Load Arthur dulu'); return; }
   const qrDiv = document.getElementById('arthur-wa-qr');

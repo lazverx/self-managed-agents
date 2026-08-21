@@ -149,20 +149,31 @@ is complete and the user clearly asks you to create it, call create_assistant
 in the same turn. Do not claim an assistant exists until the tool confirms it.
 Before a destructive action, require explicit confirmation.
 
+Every user automatically starts on the free Trial plan (1 assistant slot, 14 days, 100% free, zero payment required).
+When a user on Trial (or any plan with available slots) confirms creating an assistant (e.g. says 'setuju', 'buat', 'bikin', 'lanjutkan', or confirms the summary), you MUST immediately call create_assistant with confirmed=true and create the assistant right away!
+DO NOT ask for payment, DO NOT mention payment links, and DO NOT ask the user to pay before creating the assistant when they have available slots.
+
 For any question about the user's plan, tier, quota, agent slots, or whether
 they can create another assistant, call get_current_plan first. State the live
 plan, active assistants, limit, and remaining slots from its result; never
-guess from the number of assistants alone. Do this before asking build
-questions or offering WhatsApp setup. If the limit is reached, explain the
-smallest tier that solves it (Starter: 1 assistant, Pro: 2, Enterprise:
-unlimited) and preserve the user's build context. If the user explicitly asks
-to buy or upgrade and names a tier, call get_payment_link in the same turn.
+guess from the number of assistants alone.
+Only if the slot limit is completely full (agents_remaining == 0), explain that the slot is full and explain the paid tiers (Starter: 1 assistant, Pro: 2, Enterprise: unlimited).
+Only call get_payment_link if the user explicitly asks to buy/upgrade to a specific paid tier or explicitly asks for a payment link. Never generate a payment link automatically during assistant creation.
 The plan changes only after confirmed payment processing; never say an upgrade
 is active merely because a checkout link was generated.
 
-When a user wants to connect an assistant to their own WhatsApp number, perform the entire onboarding process directly in this chat. Call setup_assistant_whatsapp_business after explicit confirmation, send the returned signup link directly in chat, and guide the user through the 3 simple steps (1. Open link, 2. Facebook Login & WABA setup, 3. Reply 'sudah' in chat). Never direct the user to an Arthur dashboard, admin menu, or external settings page to connect WhatsApp. Use get_assistant_whatsapp_cloud_status to verify the connection when the user replies. Never claim a WhatsApp connection is live before the status tool reports it.
+WHATSAPP CONNECTION RULES (CRITICAL - follow exactly):
+When a user wants to connect their assistant to their OWN WhatsApp number:
+1. The ONLY correct action is to call setup_assistant_whatsapp_business(agent_id=..., confirmed=true) to get the signup URL.
+2. Then send ONLY the signup_url returned by that tool in the chat — NEVER invent, guess, or hardcode a URL.
+3. The signup_url will look like "https://[cloudflare-domain]/v1/meta/signup/launch?agent_id=..." — always use exactly what the tool returns.
+4. NEVER send a payment link (chiefaiofficer.id/pay) when user asks for WhatsApp setup link.
+5. NEVER confuse a numbered reply like "2" as a step in the payment process — when the user is being offered options (e.g. "option 1: demo, option 2: own number"), reply "2" means they chose option 2, not "step 2 of payment".
+6. After user replies "sudah" or "cek", call get_assistant_whatsapp_cloud_status to verify.
+7. NEVER claim a WhatsApp connection is live before the status tool reports it.
 
-For a quick trial, use create_demo_whatsapp_trial: it creates a reusable code for the shared Arthur demo number. Never create, reconnect, or disconnect Arthur's own system device in this chat.
+For a quick trial demo (not own number), use create_demo_whatsapp_trial to get a code for the shared Arthur demo number. Never create, reconnect, or disconnect Arthur's own system device in this chat.
+
 
 An assistant can use sandbox execution, subagents, or MCP only when its job
 needs that capability. Sandbox means Docker command execution, not unrestricted
@@ -242,15 +253,35 @@ def build_arthur_v2_tools(
 
     async def _current_plan_snapshot() -> dict[str, Any]:
         """Read the caller's subscription and assistant capacity from verified identifiers."""
-        from app.core.domain.subscription_service import get_best_subscription_by_external_ids
+        from app.core.domain.subscription_service import (
+            get_best_subscription_by_external_ids,
+            get_or_create_wa_user,
+        )
 
         identifiers = [owner_phone, default_target]
+        target_phone = best_owner_identifier(owner_phone, default_target)
         async with db_factory() as db:
             details = await get_best_subscription_by_external_ids(identifiers, db)
+            if details is None and target_phone and not is_probable_lid(target_phone):
+                try:
+                    await get_or_create_wa_user(target_phone, db)
+                    await db.commit()
+                    details = await get_best_subscription_by_external_ids(identifiers, db)
+                except Exception as exc:
+                    logger.warning("arthur_v2.plan_snapshot.provision_failed", error=str(exc))
+
             if details is None:
                 return {
-                    "ok": False,
-                    "error": "Status plan untuk nomor WhatsApp ini belum ditemukan.",
+                    "ok": True,
+                    "plan_code": "trial",
+                    "plan_label": "Trial (Gratis)",
+                    "subscription_status": "trial",
+                    "subscription_active": True,
+                    "agents_used": 0,
+                    "agents_limit": 1,
+                    "agents_remaining": 1,
+                    "active_assistant_names": [],
+                    "note": "Akun baru — trial otomatis aktif, tidak perlu daftar.",
                 }
             user, subscription, plan = details
             owner_identifier = best_owner_identifier(
@@ -638,15 +669,17 @@ def build_arthur_v2_tools(
             "ok": True,
             "assistant": _summary(agent),
             "signup_url": signup_url,
+            "CRITICAL_INSTRUCTION": f"COPY AND SEND THIS EXACT URL TO THE USER IN YOUR REPLY — DO NOT MODIFY, GUESS, OR REPLACE IT: {signup_url}",
             "instructions": (
-                f"Kirim link pendaftaran resmi Facebook ini langsung di percakapan WhatsApp kepada user:\n"
+                f"SEND THIS EXACT LINK TO THE USER — copy it verbatim:\n"
                 f"{signup_url}\n\n"
-                "Pandu user langsung di chat dengan 3 langkah sederhana:\n"
-                "1. Buka link resmi Meta/Facebook di atas.\n"
-                "2. Login dengan akun Facebook Business kamu & hubungkan nomor WhatsApp Business.\n"
-                "3. Setelah selesai di website Meta, kembali ke chat ini dan ketik 'sudah' atau 'cek status'."
+                f"DO NOT use any other URL. Do not use chiefaiofficer.id. Do not use localhost. The ONLY correct URL is: {signup_url}\n\n"
+                "Guide the user with 3 simple steps:\n"
+                "1. Open the link above.\n"
+                "2. Login with Facebook Business & connect the WhatsApp number.\n"
+                "3. Reply 'sudah' in chat when done."
             ),
-            "next_step": "Berikan link resmi Facebook di atas di chat WhatsApp ini, jelaskan langkahnya, lalu tunggu user membalas 'sudah' sebelum mengecek status dengan get_assistant_whatsapp_cloud_status.",
+            "next_step": f"Send this exact URL in chat: {signup_url} — then wait for user to reply 'sudah' before calling get_assistant_whatsapp_cloud_status.",
         }
 
     @tool

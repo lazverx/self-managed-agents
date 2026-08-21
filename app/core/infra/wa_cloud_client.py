@@ -265,3 +265,149 @@ async def download_media(
         )
         resp.raise_for_status()
         return resp.content, mime_type
+
+
+# ---------------------------------------------------------------------------
+# Media upload (base64 → Meta media endpoint → media_id)
+# ---------------------------------------------------------------------------
+
+async def upload_media(
+    phone_number_id: str,
+    media_bytes: bytes,
+    mimetype: str,
+    access_token: str,
+    filename: str = "file",
+) -> str:
+    """Upload media bytes to Meta's media endpoint. Returns the media_id.
+
+    Cloud API requires media to be uploaded first, then referenced by ID
+    when sending image/document/audio messages. This replaces the legacy
+    Go wa-service flow that accepted inline base64.
+    """
+    url = f"{_graph_url()}/{phone_number_id}/media"
+    files = {
+        "file": (filename, media_bytes, mimetype),
+    }
+    data = {
+        "messaging_product": "whatsapp",
+        "type": mimetype,
+    }
+    async with httpx.AsyncClient(timeout=60) as client:
+        resp = await client.post(
+            url,
+            files=files,
+            data=data,
+            headers={"Authorization": f"Bearer {access_token}"},
+        )
+        resp.raise_for_status()
+        result = resp.json()
+    media_id = result.get("id", "")
+    if not media_id:
+        raise ValueError(f"Media upload returned no ID: {result}")
+    logger.info("wa_cloud.media_uploaded", phone_number_id=phone_number_id, media_id=media_id, mimetype=mimetype)
+    return media_id
+
+
+async def send_image_by_media_id(
+    phone_number_id: str,
+    to: str,
+    media_id: str,
+    caption: str,
+    access_token: str,
+) -> dict:
+    """Send an image message via Cloud API using an uploaded media ID."""
+    url = f"{_graph_url()}/{phone_number_id}/messages"
+    payload = {
+        "messaging_product": "whatsapp",
+        "recipient_type": "individual",
+        "to": to,
+        "type": "image",
+        "image": {"id": media_id, "caption": caption},
+    }
+    async with httpx.AsyncClient(timeout=_SEND_TIMEOUT) as client:
+        resp = await client.post(
+            url, json=payload,
+            headers={"Authorization": f"Bearer {access_token}"},
+        )
+        resp.raise_for_status()
+        data = resp.json()
+    message_id = ""
+    if "messages" in data and data["messages"]:
+        message_id = data["messages"][0].get("id", "")
+    logger.info("wa_cloud.send_image", phone_number_id=phone_number_id, to=to, message_id=message_id)
+    return {"status": "sent", "message_id": message_id}
+
+
+async def send_document_by_media_id(
+    phone_number_id: str,
+    to: str,
+    media_id: str,
+    filename: str,
+    caption: str,
+    access_token: str,
+) -> dict:
+    """Send a document message via Cloud API using an uploaded media ID."""
+    url = f"{_graph_url()}/{phone_number_id}/messages"
+    payload = {
+        "messaging_product": "whatsapp",
+        "recipient_type": "individual",
+        "to": to,
+        "type": "document",
+        "document": {
+            "id": media_id,
+            "filename": filename,
+            "caption": caption,
+        },
+    }
+    async with httpx.AsyncClient(timeout=_SEND_TIMEOUT) as client:
+        resp = await client.post(
+            url, json=payload,
+            headers={"Authorization": f"Bearer {access_token}"},
+        )
+        resp.raise_for_status()
+        data = resp.json()
+    message_id = ""
+    if "messages" in data and data["messages"]:
+        message_id = data["messages"][0].get("id", "")
+    logger.info("wa_cloud.send_document", phone_number_id=phone_number_id, to=to, filename=filename, message_id=message_id)
+    return {"status": "sent", "message_id": message_id}
+
+
+async def send_contact_message(
+    phone_number_id: str,
+    to: str,
+    display_name: str,
+    phone: str,
+    access_token: str,
+) -> dict:
+    """Send a WhatsApp contact card via Cloud API."""
+    url = f"{_graph_url()}/{phone_number_id}/messages"
+    payload = {
+        "messaging_product": "whatsapp",
+        "recipient_type": "individual",
+        "to": to,
+        "type": "contacts",
+        "contacts": [{
+            "name": {
+                "formatted_name": display_name,
+                "first_name": display_name,
+            },
+            "phones": [{
+                "phone": phone,
+                "type": "CELL",
+            }],
+        }],
+    }
+    async with httpx.AsyncClient(timeout=_SEND_TIMEOUT) as client:
+        resp = await client.post(
+            url, json=payload,
+            headers={"Authorization": f"Bearer {access_token}"},
+        )
+        resp.raise_for_status()
+        data = resp.json()
+    message_id = ""
+    if "messages" in data and data["messages"]:
+        message_id = data["messages"][0].get("id", "")
+    logger.info("wa_cloud.send_contact", phone_number_id=phone_number_id, to=to, message_id=message_id)
+    return {"status": "sent", "message_id": message_id}
+

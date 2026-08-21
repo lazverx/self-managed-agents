@@ -7,7 +7,7 @@ Endpoint:
 from __future__ import annotations
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status, BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.wa_helpers import find_agent_by_phone_number_id, find_or_create_wa_session
@@ -16,7 +16,21 @@ from app.core.engine.agent_runner import run_agent
 from app.core.infra.channel_service import send_message
 from app.core.infra.meta_embedded_signup import validate_webhook_verification
 from app.core.infra.wa_cloud_client import mark_message_read
-from app.database import get_db
+from app.database import get_db, AsyncSessionLocal
+
+async def bg_process_cloud_message(agent_id, phone_number_id: str, msg: dict, sender_name: str):
+    from sqlalchemy import select
+    from app.models.agent import Agent
+    async with AsyncSessionLocal() as db:
+        agent = (await db.execute(select(Agent).where(Agent.id == agent_id))).scalar_one_or_none()
+        if agent:
+            await _process_incoming_cloud_message(
+                agent=agent,
+                phone_number_id=phone_number_id,
+                msg=msg,
+                sender_name=sender_name,
+                db=db
+            )
 
 logger = structlog.get_logger(__name__)
 router = APIRouter(prefix="/v1/webhooks", tags=["meta-webhooks"])
@@ -40,6 +54,7 @@ async def verify_meta_webhook(
 @router.post("/meta")
 async def handle_meta_webhook(
     request: Request,
+    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     """POST webhook endpoint for incoming Meta Cloud API messages and status events."""
@@ -73,12 +88,12 @@ async def handle_meta_webhook(
             sender_name = contacts[0].get("profile", {}).get("name", "") if contacts else ""
 
             for msg in messages:
-                await _process_incoming_cloud_message(
-                    agent=agent,
+                background_tasks.add_task(
+                    bg_process_cloud_message,
+                    agent_id=agent.id,
                     phone_number_id=phone_number_id,
                     msg=msg,
                     sender_name=sender_name,
-                    db=db,
                 )
 
     return {"status": "ok"}
@@ -98,6 +113,17 @@ async def _process_incoming_cloud_message(
 
     if not from_phone:
         return
+
+    # Send blue-tick read receipt for the incoming message
+    if msg_id:
+        try:
+            from app.core.infra.channel_service import decrypt_value
+            encrypted_token = agent.wa_access_token_encrypted or ""
+            if encrypted_token:
+                access_token = decrypt_value(encrypted_token)
+                await mark_message_read(phone_number_id, msg_id, access_token)
+        except Exception as exc:
+            logger.debug("meta_webhook.mark_read_failed", msg_id=msg_id, error=str(exc)[:200])
 
     # Text content extraction
     message_text = ""
@@ -131,11 +157,23 @@ async def _process_incoming_cloud_message(
         sender_name=sender_name,
     )
 
+    # Auto-provision trial subscription for new users (zero-setup onboarding)
+    try:
+        from app.core.domain.subscription_service import get_or_create_wa_user
+        await get_or_create_wa_user(from_phone, db)
+        await db.commit()
+    except Exception as _prov_exc:
+        logger.warning("meta_webhook.user_provision_failed", from_phone=from_phone, error=str(_prov_exc)[:300])
+        try:
+            await db.rollback()
+        except Exception:
+            pass
+
     # Run agent runner pipeline
     try:
         run_result = await run_agent(
-            agent_id=agent.id,
-            session_id=session.id,
+            agent_model=agent,
+            session=session,
             user_message=message_text,
             db=db,
         )
